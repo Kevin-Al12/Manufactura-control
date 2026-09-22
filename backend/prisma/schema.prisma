@@ -1,0 +1,314 @@
+// Control Operativo — esquema de datos
+// Multi-tenant: toda tabla de negocio cuelga de tenant_id.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  SUPERVISOR
+  EMPLEADO
+}
+
+enum Channel {
+  EMAIL
+  WHATSAPP // reservado para fase 2, no implementado aun
+}
+
+enum NotificationStatus {
+  PENDING // fila creada, esperando ser tomada por el worker
+  QUEUED // tomada por el worker, en proceso de envio
+  SENT
+  FAILED
+}
+
+enum EventSource {
+  API
+  WEBHOOK
+  SCHEDULED
+}
+
+enum MachineStatus {
+  RUNNING
+  IDLE
+  DOWN
+  MAINTENANCE
+}
+
+enum WorkOrderStatus {
+  CREATED
+  IN_PROGRESS
+  READY
+  INSPECTED
+  CANCELLED
+}
+
+enum PurchaseOrderStatus {
+  PENDING
+  RECEIVED
+}
+
+/// Empresa cliente del SaaS. Raiz del aislamiento multi-tenant.
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  apiKey    String   @unique @map("api_key") // para disparar eventos via webhook, sin login de usuario
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  users          User[]
+  eventTypes     EventType[]
+  events         Event[]
+  notifications  Notification[]
+  machines       Machine[]
+  workOrders     WorkOrder[]
+  inventoryItems InventoryItem[]
+  purchaseOrders PurchaseOrder[]
+
+  @@map("tenants")
+}
+
+/// Simulacro de la capa SCADA/PLC: una maquina de planta con estado en
+/// vivo. No habla con hardware real; el simulador (src/simulator) le hace
+/// de sensor, cambiando su estado y dejando rastro en MachineStatusLog.
+model Machine {
+  id        String        @id @default(uuid())
+  tenantId  String        @map("tenant_id")
+  name      String
+  area      String?
+  status    MachineStatus @default(IDLE)
+  isActive  Boolean       @default(true) @map("is_active")
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  statusLogs MachineStatusLog[]
+  workOrders WorkOrder[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@map("machines")
+}
+
+/// Log inmutable de cambios de estado de una maquina (arranco, se
+/// detuvo, entro en falla). Es lo que permite calcular disponibilidad
+/// sin necesitar telemetria real.
+model MachineStatusLog {
+  id        String        @id @default(uuid())
+  tenantId  String        @map("tenant_id")
+  machineId String        @map("machine_id")
+  status    MachineStatus
+  note      String?
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  machine Machine @relation(fields: [machineId], references: [id], onDelete: Cascade)
+
+  @@index([machineId, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("machine_status_logs")
+}
+
+/// Simulacro de la capa MES: el ciclo de vida de un lote de produccion
+/// (orden de trabajo). Cada transicion de estado puede disparar un
+/// evento real a traves del motor de Control Operativo (ej. al llegar a
+/// READY dispara "lote_listo"), demostrando el flujo MES -> notificacion
+/// sin necesitar un MES real conectado.
+model WorkOrder {
+  id          String          @id @default(uuid())
+  tenantId    String          @map("tenant_id")
+  code        String // ej "OT-1001", visible en piso de planta
+  area        String?
+  machineId   String?         @map("machine_id")
+  quantity    Int             @default(1)
+  status      WorkOrderStatus @default(CREATED)
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  startedAt   DateTime?       @map("started_at") @db.Timestamptz(3)
+  readyAt     DateTime?       @map("ready_at") @db.Timestamptz(3)
+  inspectedAt DateTime?       @map("inspected_at") @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  machine Machine? @relation(fields: [machineId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@map("work_orders")
+}
+
+/// Persona dentro de un tenant: puede autenticarse (admin/supervisor) o
+/// ser solo destinataria de notificaciones (empleado de planta).
+model User {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  email          String
+  passwordHash   String?  @map("password_hash") // null = usuario sin acceso al panel, solo recibe notificaciones
+  name           String
+  role           Role     @default(EMPLEADO)
+  area           String?
+  shift          String?  @map("shift") // turno: mañana/tarde/noche, libre para que cada tenant lo nombre
+  phone          String? // para canal WhatsApp en fase 2
+  contactChannel Channel  @default(EMAIL) @map("contact_channel")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  notifications Notification[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId, role])
+  @@index([tenantId, area])
+  @@map("users")
+}
+
+/// Catalogo de tipos de evento configurables por tenant.
+/// recipientRule describe quien recibe la notificacion, ej:
+///   {"type":"ROLE","value":"SUPERVISOR"}
+///   {"type":"AREA","value":"Moldeo"}
+///   {"type":"USERS","value":["<userId>", "<userId>"]}
+///   {"type":"ALL"}
+model EventType {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  name            String
+  triggerKey      String   @map("trigger_key") // slug usado por API/webhook para disparar, ej "lote_listo"
+  description     String?
+  recipientRule   Json     @map("recipient_rule")
+  messageTemplate String   @map("message_template") // soporta variables {{var}}
+  channel         Channel  @default(EMAIL)
+  schedule        String? // expresion cron opcional; si esta presente, el evento se dispara solo ademas de manual/webhook
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  events        Event[]
+  notifications Notification[]
+
+  @@unique([tenantId, triggerKey])
+  @@map("event_types")
+}
+
+/// Una OCURRENCIA de un evento (un disparo real desde API/webhook/scheduler).
+/// La deduplicacion vive aqui: (tenantId, idempotencyKey) es unico, asi que
+/// un mismo evento reintentado (ej. webhook duplicado) nunca genera un
+/// segundo fan-out de notificaciones, sin importar a cuantos destinatarios
+/// le corresponda.
+model Event {
+  id             String      @id @default(uuid())
+  tenantId       String      @map("tenant_id")
+  eventTypeId    String      @map("event_type_id")
+  idempotencyKey String      @map("idempotency_key")
+  source         EventSource @default(API)
+  payload        Json // variables para renderizar la plantilla, ej {"lote_id": "L-102"}
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  eventType     EventType      @relation(fields: [eventTypeId], references: [id], onDelete: Cascade)
+  notifications Notification[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, eventTypeId])
+  @@map("events")
+}
+
+/// Fan-out por destinatario de un Event. Esta es la unidad que la cola
+/// asincrona procesa y entrega.
+model Notification {
+  id              String             @id @default(uuid())
+  tenantId        String             @map("tenant_id")
+  eventId         String             @map("event_id")
+  eventTypeId     String             @map("event_type_id")
+  recipientUserId String?            @map("recipient_user_id") // null si el usuario fue borrado luego de enviarse
+  recipientEmail  String             @map("recipient_email") // snapshot al momento de crear la notificacion
+  channel         Channel            @default(EMAIL)
+  status          NotificationStatus @default(PENDING)
+  renderedMessage String             @map("rendered_message")
+  attempts        Int                @default(0)
+  maxAttempts     Int                @default(5) @map("max_attempts")
+  nextAttemptAt   DateTime           @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  lastError       String?            @map("last_error")
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  queuedAt        DateTime?          @map("queued_at") @db.Timestamptz(3)
+  sentAt          DateTime?          @map("sent_at") @db.Timestamptz(3)
+  failedAt        DateTime?          @map("failed_at") @db.Timestamptz(3)
+  updatedAt       DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event         Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventType     EventType         @relation(fields: [eventTypeId], references: [id], onDelete: Cascade)
+  recipientUser User?             @relation(fields: [recipientUserId], references: [id], onDelete: SetNull)
+  logs          NotificationLog[]
+
+  @@index([tenantId, status, nextAttemptAt]) // usado por el worker para tomar trabajo pendiente
+  @@index([tenantId, eventTypeId, createdAt]) // usado por el dashboard (filtros)
+  @@index([tenantId, recipientUserId, createdAt])
+  @@map("notifications")
+}
+
+/// Log inmutable de cada cambio de estado de una notificacion. Nunca se
+/// actualiza ni se borra, solo se inserta (auditoria).
+model NotificationLog {
+  id             String             @id @default(uuid())
+  tenantId       String             @map("tenant_id") // denormalizado a proposito: permite filtrar/RLS sin join
+  notificationId String             @map("notification_id")
+  status         NotificationStatus
+  message        String?
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([notificationId, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("notification_logs")
+}
+
+/// Simulacro de la capa ERP (inventario): materia prima que el MES
+/// consume al arrancar una orden de trabajo. Cuando el stock cae debajo
+/// de reorderThreshold se genera automaticamente una PurchaseOrder.
+model InventoryItem {
+  id               String   @id @default(uuid())
+  tenantId         String   @map("tenant_id")
+  name             String
+  sku              String
+  unit             String   @default("kg")
+  quantity         Int      @default(0)
+  reorderThreshold Int      @default(50) @map("reorder_threshold")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  purchaseOrders PurchaseOrder[]
+
+  @@unique([tenantId, sku])
+  @@map("inventory_items")
+}
+
+/// Simulacro de la capa ERP (compras): reposicion de un insumo. Se crea
+/// sola cuando el inventario cae debajo del umbral (ver
+/// src/simulator/simulator.ts), y puede dispararse un evento real
+/// ("stock_bajo") avisando a compras/administracion — mismo motor de
+/// siempre.
+model PurchaseOrder {
+  id              String              @id @default(uuid())
+  tenantId        String              @map("tenant_id")
+  inventoryItemId String              @map("inventory_item_id")
+  quantity        Int
+  status          PurchaseOrderStatus @default(PENDING)
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  receivedAt      DateTime?           @map("received_at") @db.Timestamptz(3)
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("purchase_orders")
+}
