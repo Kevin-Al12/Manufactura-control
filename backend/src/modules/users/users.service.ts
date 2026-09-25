@@ -18,7 +18,17 @@ export interface CreateUserInput {
   password?: string; // opcional: si no se manda, el usuario solo recibe notificaciones, no puede loguear
 }
 
-export async function createUser(tenantId: string, input: CreateUserInput) {
+/** Quien hace la accion. Un SUPERVISOR solo gestiona EMPLEADOS; asignar roles es cosa del ADMIN. */
+export interface Actor {
+  userId: string;
+  role: Role;
+}
+
+export async function createUser(tenantId: string, input: CreateUserInput, actor: Actor) {
+  if (actor.role !== Role.ADMIN && input.role && input.role !== Role.EMPLEADO) {
+    throw new HttpError(403, "Solo un administrador puede crear usuarios con rol ADMIN o SUPERVISOR");
+  }
+
   const existing = await prisma.user.findUnique({
     where: { tenantId_email: { tenantId, email: input.email.toLowerCase().trim() } },
   });
@@ -77,7 +87,24 @@ export interface UpdateUserInput {
   isActive?: boolean;
 }
 
-export async function updateUser(tenantId: string, userId: string, input: UpdateUserInput) {
+export async function updateUser(tenantId: string, userId: string, input: UpdateUserInput, actor: Actor) {
+  const target = await prisma.user.findFirst({ where: { id: userId, tenantId }, select: { role: true } });
+  if (!target) throw new HttpError(404, "Usuario no encontrado");
+
+  if (actor.role !== Role.ADMIN) {
+    if (target.role !== Role.EMPLEADO) {
+      throw new HttpError(403, "Un supervisor solo puede editar empleados");
+    }
+    if (input.role !== undefined && input.role !== Role.EMPLEADO) {
+      throw new HttpError(403, "Solo un administrador puede cambiar roles");
+    }
+  }
+
+  // Evita que alguien se deje sin acceso a si mismo por accidente.
+  if (userId === actor.userId && ((input.role !== undefined && input.role !== actor.role) || input.isActive === false)) {
+    throw new HttpError(400, "No puedes cambiar tu propio rol ni darte de baja");
+  }
+
   // updateMany en vez de update: si el id no pertenece al tenant, count=0
   // en vez de mutar una fila de otra empresa.
   const result = await prisma.user.updateMany({
@@ -88,8 +115,8 @@ export async function updateUser(tenantId: string, userId: string, input: Update
   return getUser(tenantId, userId);
 }
 
-export async function deactivateUser(tenantId: string, userId: string) {
-  return updateUser(tenantId, userId, { isActive: false });
+export async function deactivateUser(tenantId: string, userId: string, actor: Actor) {
+  return updateUser(tenantId, userId, { isActive: false }, actor);
 }
 
 function sanitize<T extends { passwordHash?: string | null }>(user: T) {

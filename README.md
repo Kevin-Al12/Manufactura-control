@@ -87,10 +87,16 @@ control-operativo/
   escribir datos de otro con solo cambiar un id.
 - **Aislamiento multi-tenant**: cada función de acceso a datos
   (`src/modules/**/*.service.ts`) recibe `tenantId` de forma explícita y
-  lo incluye en el `where` de toda consulta/mutación. Como capa adicional
-  opcional para producción se incluye `backend/prisma/rls.sql` con
-  políticas de Row-Level Security de Postgres (ver comentarios en ese
-  archivo para cuándo y cómo aplicarlas).
+  lo incluye en el `where` de toda consulta/mutación. Además se incluye
+  `backend/prisma/rls.sql` con políticas de Row-Level Security de
+  Postgres para todas las tablas con `tenant_id`. **Todavía no está
+  activo**: la app aún no fija `app.current_tenant_id` por request, así
+  que hoy el aislamiento depende solo de los filtros de la capa de
+  servicios (ver en ese archivo qué falta para activarlo).
+- **Sesiones**: además de verificar la firma del JWT, cada request relee
+  al usuario de la base; un usuario dado de baja (o una empresa
+  desactivada) pierde el acceso de inmediato, y un cambio de rol aplica
+  sin esperar a que el token expire.
 - **Cola de notificaciones**: en vez de sumar Redis/BullMQ desde el día
   uno, el MVP usa la propia tabla `notifications` de Postgres como cola
   (`status = PENDING` + un worker — proceso separado, `npm run worker` —
@@ -366,11 +372,11 @@ curl -X POST http://localhost:4000/api/simulator/start -H "Authorization: Bearer
 | `POST /api/tenants/register` | público | Alta de empresa + usuario admin |
 | `POST /api/auth/login` | público | `{ tenantSlug, email, password }` |
 | `GET /api/auth/me` | autenticado | Usuario actual |
-| `GET/POST/PATCH/DELETE /api/users` | admin/supervisor | Alta, baja (lógica) y edición de empleados |
+| `GET/POST/PATCH/DELETE /api/users` | admin/supervisor | Alta, baja (lógica) y edición de empleados. Un supervisor solo gestiona usuarios `EMPLEADO`; asignar roles es solo del admin |
 | `GET /api/tenant` | admin | Datos de la empresa (incluye `api_key`) |
 | `POST /api/tenant/api-key/rotate` | admin | Rota la `api_key` de webhook |
 | `GET/POST/PATCH/DELETE /api/event-types` | admin (GET: +supervisor) | Catálogo de tipos de evento |
-| `POST /api/events/trigger` | JWT **o** `X-API-Key` | Dispara un evento (`triggerKey`, `idempotencyKey`, `payload`) |
+| `POST /api/events/trigger` | admin/supervisor **o** `X-API-Key` | Dispara un evento (`triggerKey`, `idempotencyKey`, `payload`) |
 | `GET /api/notifications` | admin/supervisor | Historial filtrable (paginado) |
 | `GET /api/notifications/mine` | autenticado | Historial propio del usuario logueado |
 | `GET /api/notifications/stats` | admin/supervisor | Totales, tasa de entrega y tendencia diaria (14 días) |

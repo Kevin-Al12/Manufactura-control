@@ -2,10 +2,15 @@ export type Role = "ADMIN" | "SUPERVISOR" | "EMPLEADO";
 export type Channel = "EMAIL" | "WHATSAPP";
 export type NotificationStatus = "PENDING" | "QUEUED" | "SENT" | "FAILED";
 
+/** Lo que cualquier usuario recibe al loguearse. Sin la apiKey. */
 export interface Tenant {
   id: string;
   name: string;
   slug: string;
+}
+
+/** Solo para ADMIN, via GET /api/tenant. */
+export interface TenantDetail extends Tenant {
   apiKey: string;
   isActive: boolean;
   createdAt: string;

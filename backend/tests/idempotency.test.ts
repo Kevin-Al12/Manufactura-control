@@ -21,7 +21,6 @@ async function setupTenant() {
   expect(registerRes.status).toBe(201);
   createdTenantSlugs.push(registerRes.body.tenant.slug);
   const token = registerRes.body.token as string;
-  const apiKey = registerRes.body.tenant.apiKey as string;
 
   const eventTypeRes = await request(app)
     .post("/api/event-types")
@@ -34,7 +33,7 @@ async function setupTenant() {
     });
   expect(eventTypeRes.status).toBe(201);
 
-  return { token, apiKey };
+  return { token };
 }
 
 describe("anti-duplicacion de notificaciones", () => {

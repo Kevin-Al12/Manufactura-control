@@ -51,7 +51,7 @@ export async function registerTenant(input: RegisterTenantInput) {
   });
 
   const token = signAuthToken({ userId: admin.id, tenantId: tenant.id, role: admin.role });
-  return { token, tenant, user: sanitizeUser(admin) };
+  return { token, tenant: publicTenant(tenant), user: sanitizeUser(admin) };
 }
 
 export interface LoginInput {
@@ -75,7 +75,13 @@ export async function login(input: LoginInput) {
   if (!valid) throw new HttpError(401, "Credenciales invalidas");
 
   const token = signAuthToken({ userId: user.id, tenantId: tenant.id, role: user.role });
-  return { token, tenant, user: sanitizeUser(user) };
+  return { token, tenant: publicTenant(tenant), user: sanitizeUser(user) };
+}
+
+// Lo que cualquier usuario del tenant puede ver. La apiKey NO va aqui: solo
+// un ADMIN la obtiene, via GET /api/tenant.
+function publicTenant(tenant: { id: string; name: string; slug: string }) {
+  return { id: tenant.id, name: tenant.name, slug: tenant.slug };
 }
 
 export async function getCurrentUser(tenantId: string, userId: string) {

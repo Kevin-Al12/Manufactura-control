@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
-import { EventSource } from "@prisma/client";
+import { EventSource, Role } from "@prisma/client";
 import * as eventsService from "./events.service";
-import { authenticateTenant } from "../../middleware/auth";
+import { authenticateTenant, authorizeTenant } from "../../middleware/auth";
 import { HttpError } from "../../middleware/errorHandler";
 
 export const eventsRouter = Router();
@@ -16,7 +16,8 @@ const triggerSchema = z.object({
   payload: z.record(z.unknown()).optional(),
 });
 
-eventsRouter.post("/trigger", authenticateTenant, async (req, res, next) => {
+// Un EMPLEADO no puede disparar eventos (podria mandar un aviso a toda la empresa).
+eventsRouter.post("/trigger", authenticateTenant, authorizeTenant(Role.ADMIN, Role.SUPERVISOR), async (req, res, next) => {
   try {
     const input = triggerSchema.parse(req.body);
     const source = req.tenantAuth!.via === "apiKey" ? EventSource.WEBHOOK : EventSource.API;

@@ -14,6 +14,7 @@ import type {
   Channel,
   SimulatorStatus,
   Tenant,
+  TenantDetail,
   User,
   WorkOrder,
 } from "../types";
@@ -76,11 +77,11 @@ export function getMe() {
 }
 
 export function getTenant() {
-  return request<{ tenant: Tenant }>("/api/tenant");
+  return request<{ tenant: TenantDetail }>("/api/tenant");
 }
 
 export function rotateApiKey() {
-  return request<{ tenant: Tenant }>("/api/tenant/api-key/rotate", { method: "POST" });
+  return request<{ tenant: TenantDetail }>("/api/tenant/api-key/rotate", { method: "POST" });
 }
 
 // --- Users (empleados) ---

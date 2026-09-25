@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { z } from "zod";
 import { Channel, Role } from "@prisma/client";
 import * as usersService from "./users.service";
@@ -22,7 +22,7 @@ const createSchema = z.object({
 usersRouter.post("/", authorize(Role.ADMIN, Role.SUPERVISOR), async (req, res, next) => {
   try {
     const input = createSchema.parse(req.body);
-    const user = await usersService.createUser(req.auth!.tenantId, input);
+    const user = await usersService.createUser(req.auth!.tenantId, input, actorOf(req));
     res.status(201).json({ user });
   } catch (err) {
     next(toHttpError(err));
@@ -65,7 +65,7 @@ const updateSchema = z.object({
 usersRouter.patch("/:id", authorize(Role.ADMIN, Role.SUPERVISOR), async (req, res, next) => {
   try {
     const input = updateSchema.parse(req.body);
-    const user = await usersService.updateUser(req.auth!.tenantId, req.params.id!, input);
+    const user = await usersService.updateUser(req.auth!.tenantId, req.params.id!, input, actorOf(req));
     res.json({ user });
   } catch (err) {
     next(toHttpError(err));
@@ -75,7 +75,7 @@ usersRouter.patch("/:id", authorize(Role.ADMIN, Role.SUPERVISOR), async (req, re
 // "Baja" de empleado: baja logica (isActive=false), preserva historial de notificaciones.
 usersRouter.delete("/:id", authorize(Role.ADMIN), async (req, res, next) => {
   try {
-    const user = await usersService.deactivateUser(req.auth!.tenantId, req.params.id!);
+    const user = await usersService.deactivateUser(req.auth!.tenantId, req.params.id!, actorOf(req));
     res.json({ user });
   } catch (err) {
     next(err);
@@ -87,4 +87,8 @@ function toHttpError(err: unknown) {
     return new HttpError(400, err.issues.map((i) => i.message).join(", "));
   }
   return err;
+}
+
+function actorOf(req: Request): usersService.Actor {
+  return { userId: req.auth!.userId, role: req.auth!.role };
 }

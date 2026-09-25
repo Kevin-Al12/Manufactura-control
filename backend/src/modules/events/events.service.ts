@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Prisma, EventSource, NotificationStatus, Role } from "@prisma/client";
 import { prisma } from "../../db/prisma";
 import { HttpError } from "../../middleware/errorHandler";
@@ -36,77 +37,67 @@ export async function triggerEvent(tenantId: string, input: TriggerEventInput): 
   }
 
   const payload = input.payload ?? {};
+  const recipients = await resolveRecipients(tenantId, eventType.recipientRule as unknown as RecipientRule);
 
-  let event;
-  let duplicate = false;
+  // El Event y todo su fan-out se crean en UNA transaccion: o queda todo o
+  // no queda nada. Si el Event se guardara aparte y el fan-out fallara, el
+  // reintento del cliente se veria como "duplicado" y nadie seria
+  // notificado nunca.
   try {
-    event = await prisma.event.create({
-      data: {
+    return await prisma.$transaction(async (tx) => {
+      const event = await tx.event.create({
+        data: {
+          tenantId,
+          eventTypeId: eventType.id,
+          idempotencyKey: input.idempotencyKey,
+          source: input.source ?? EventSource.API,
+          payload: payload as Prisma.InputJsonValue,
+        },
+      });
+
+      const rows = recipients.map((recipient) => ({
+        id: randomUUID(),
         tenantId,
+        eventId: event.id,
         eventTypeId: eventType.id,
-        idempotencyKey: input.idempotencyKey,
-        source: input.source ?? EventSource.API,
-        payload: payload as Prisma.InputJsonValue,
-      },
+        recipientUserId: recipient.id,
+        recipientEmail: recipient.email,
+        channel: eventType.channel,
+        renderedMessage: renderTemplate(eventType.messageTemplate, {
+          ...payload,
+          nombre: recipient.name,
+          area: recipient.area ?? "",
+          turno: recipient.shift ?? "",
+          email: recipient.email,
+        }),
+        status: NotificationStatus.PENDING,
+      }));
+
+      if (rows.length > 0) {
+        await tx.notification.createMany({ data: rows });
+        await tx.notificationLog.createMany({
+          data: rows.map((row) => ({
+            tenantId,
+            notificationId: row.id,
+            status: NotificationStatus.PENDING,
+            message: "Notificacion creada, en espera de ser encolada",
+          })),
+        });
+      }
+
+      return { eventId: event.id, duplicate: false, notificationsCreated: rows.length };
     });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       // Ya existe un Event con este (tenantId, idempotencyKey): el mismo
-      // evento fue disparado antes. No se vuelve a hacer fan-out.
-      event = await prisma.event.findUniqueOrThrow({
+      // evento fue disparado (y repartido) antes. No se vuelve a hacer fan-out.
+      const existing = await prisma.event.findUniqueOrThrow({
         where: { tenantId_idempotencyKey: { tenantId, idempotencyKey: input.idempotencyKey } },
       });
-      duplicate = true;
-    } else {
-      throw err;
+      return { eventId: existing.id, duplicate: true, notificationsCreated: 0 };
     }
+    throw err;
   }
-
-  if (duplicate) {
-    return { eventId: event.id, duplicate: true, notificationsCreated: 0 };
-  }
-
-  const recipients = await resolveRecipients(tenantId, eventType.recipientRule as unknown as RecipientRule);
-
-  const notifications = await prisma.$transaction(async (tx) => {
-    const created = [];
-    for (const recipient of recipients) {
-      const renderedMessage = renderTemplate(eventType.messageTemplate, {
-        ...payload,
-        nombre: recipient.name,
-        area: recipient.area ?? "",
-        turno: recipient.shift ?? "",
-        email: recipient.email,
-      });
-
-      const notification = await tx.notification.create({
-        data: {
-          tenantId,
-          eventId: event.id,
-          eventTypeId: eventType.id,
-          recipientUserId: recipient.id,
-          recipientEmail: recipient.email,
-          channel: eventType.channel,
-          renderedMessage,
-          status: NotificationStatus.PENDING,
-        },
-      });
-
-      await tx.notificationLog.create({
-        data: {
-          tenantId,
-          notificationId: notification.id,
-          status: NotificationStatus.PENDING,
-          message: "Notificacion creada, en espera de ser encolada",
-        },
-      });
-
-      created.push(notification);
-    }
-    return created;
-  });
-
-  return { eventId: event.id, duplicate: false, notificationsCreated: notifications.length };
 }
 
 interface Recipient {
