@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import * as api from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
-import { DonutChart } from "../components/DonutChart";
+import { StatusBreakdown } from "../components/StatusBreakdown";
 import { TrendChart } from "../components/TrendChart";
-import { IconTotal, IconCheck, IconAlert, IconClock, IconTarget } from "../components/icons";
+import { IconChevronLeft, IconChevronRight, IconX } from "../components/icons";
+import { formatDateTime, formatNumber, initials } from "../format";
 import type { EventType, NotificationItem, NotificationStats, User } from "../types";
 
 const PAGE_SIZE = 15;
@@ -25,8 +26,14 @@ export function DashboardPage() {
   const [to, setTo] = useState("");
 
   useEffect(() => {
-    api.listUsers().then((r) => setUsers(r.users)).catch(() => {});
-    api.listEventTypes().then((r) => setEventTypes(r.eventTypes)).catch(() => {});
+    api
+      .listUsers()
+      .then((r) => setUsers(r.users))
+      .catch(() => {});
+    api
+      .listEventTypes()
+      .then((r) => setEventTypes(r.eventTypes))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -62,77 +69,109 @@ export function DashboardPage() {
   }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const hasFilters = !!(recipientUserId || eventTypeId || status || from || to);
+  const rangeLabel = from || to ? "En el rango elegido" : "Histórico completo";
+  const inFlight = (stats?.pending ?? 0) + (stats?.queued ?? 0);
+  const share = (v: number) => (stats && stats.total > 0 ? Math.round((v / stats.total) * 100) : 0);
+  const rate = stats ? Math.round(stats.deliveryRate * 100) : null;
+  const firstRow = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const lastRow = Math.min(total, page * PAGE_SIZE);
+  const loadingValue = <span className="skeleton" />;
 
   return (
     <div>
       <div className="page-header">
         <div>
           <h1>Dashboard</h1>
-          <p>Notificaciones enviadas, tasa de entrega y fallos</p>
+          <p>Qué se avisó, a quién, y qué no llegó.</p>
         </div>
       </div>
 
-      <div className="stat-grid">
-        <div className="stat-card">
-          <div className="icon-badge" style={{ background: "var(--info-bg)", color: "var(--info)" }}>
-            <IconTotal width={16} height={16} />
-          </div>
-          <div className="label">Total</div>
-          <div className="value">{stats?.total ?? "-"}</div>
+      <div className="kpi-strip">
+        <div className="kpi">
+          <div className="kpi-label">Total</div>
+          <div className="kpi-value">{stats ? formatNumber(stats.total) : loadingValue}</div>
+          <div className="kpi-meta">{rangeLabel}</div>
         </div>
-        <div className="stat-card">
-          <div className="icon-badge" style={{ background: "var(--success-bg)", color: "var(--success)" }}>
-            <IconCheck width={16} height={16} />
+        <div className="kpi">
+          <div className="kpi-label">
+            <span className="swatch" style={{ background: "var(--chart-bar)" }} />
+            Enviadas
           </div>
-          <div className="label">Enviadas</div>
-          <div className="value" style={{ color: "var(--success)" }}>
-            {stats?.sent ?? "-"}
-          </div>
+          <div className="kpi-value">{stats ? formatNumber(stats.sent) : loadingValue}</div>
+          <div className="kpi-meta">{share(stats?.sent ?? 0)}% del total</div>
         </div>
-        <div className="stat-card">
-          <div className="icon-badge" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>
-            <IconAlert width={16} height={16} />
+        <div className="kpi">
+          <div className="kpi-label">
+            <span className="swatch" style={{ background: "var(--danger)" }} />
+            Fallidas
           </div>
-          <div className="label">Fallidas</div>
-          <div className="value" style={{ color: "var(--danger)" }}>
-            {stats?.failed ?? "-"}
+          <div className="kpi-value" style={stats && stats.failed > 0 ? { color: "var(--danger)" } : undefined}>
+            {stats ? formatNumber(stats.failed) : loadingValue}
           </div>
+          <div className="kpi-meta">{share(stats?.failed ?? 0)}% del total</div>
         </div>
-        <div className="stat-card">
-          <div className="icon-badge" style={{ background: "var(--warning-bg)", color: "var(--warning)" }}>
-            <IconClock width={16} height={16} />
+        <div className="kpi">
+          <div className="kpi-label">
+            <span className="swatch" style={{ background: "var(--warning)" }} />
+            En curso
           </div>
-          <div className="label">En curso</div>
-          <div className="value" style={{ color: "var(--warning)" }}>
-            {(stats?.pending ?? 0) + (stats?.queued ?? 0)}
-          </div>
+          <div className="kpi-value">{stats ? formatNumber(inFlight) : loadingValue}</div>
+          <div className="kpi-meta">{stats ? `${stats.pending} pendientes · ${stats.queued} encoladas` : " "}</div>
         </div>
-        <div className="stat-card">
-          <div className="icon-badge" style={{ background: "var(--primary-light)", color: "var(--primary-dark)" }}>
-            <IconTarget width={16} height={16} />
+        <div className="kpi">
+          <div className="kpi-label">Tasa de entrega</div>
+          <div className="kpi-value">
+            {rate !== null ? (
+              <>
+                {rate}
+                <span className="unit">%</span>
+              </>
+            ) : (
+              loadingValue
+            )}
           </div>
-          <div className="label">Tasa de entrega</div>
-          <div className="value">{stats ? `${Math.round(stats.deliveryRate * 100)}%` : "-"}</div>
+          <div className="meter">
+            <span style={{ width: `${rate ?? 0}%` }} />
+          </div>
         </div>
       </div>
 
       <div className="charts-row">
         <div className="card chart-card">
-          <h3>Notificaciones por dia</h3>
-          <p className="chart-subtitle">Ultimos 14 dias — enviadas vs. fallidas</p>
+          <div className="chart-card-head">
+            <div>
+              <h3>Notificaciones por día</h3>
+              <p className="chart-subtitle">Últimos 14 días</p>
+            </div>
+            <div className="legend">
+              <span>
+                <i style={{ background: "var(--chart-bar)" }} />
+                Enviadas
+              </span>
+              <span>
+                <i style={{ background: "var(--danger)" }} />
+                Fallidas
+              </span>
+            </div>
+          </div>
           {stats && stats.byDay.length > 0 ? (
             <TrendChart data={stats.byDay} />
           ) : (
-            <div className="empty-state">Sin datos todavia</div>
+            <div className="empty-state">{stats ? "Sin datos todavía" : ""}</div>
           )}
         </div>
         <div className="card chart-card">
-          <h3>Distribucion por estado</h3>
-          <p className="chart-subtitle">Segun los filtros aplicados</p>
+          <div className="chart-card-head">
+            <div>
+              <h3>Distribución por estado</h3>
+              <p className="chart-subtitle">{rangeLabel}</p>
+            </div>
+          </div>
           {stats && (
-            <DonutChart
+            <StatusBreakdown
               segments={[
-                { label: "Enviadas", value: stats.sent, color: "var(--success)" },
+                { label: "Enviadas", value: stats.sent, color: "var(--chart-bar)" },
                 { label: "Fallidas", value: stats.failed, color: "var(--danger)" },
                 { label: "Pendientes", value: stats.pending, color: "var(--warning)" },
                 { label: "Encoladas", value: stats.queued, color: "var(--info)" },
@@ -142,141 +181,178 @@ export function DashboardPage() {
         </div>
       </div>
 
-      <div className="filters-bar card">
-        <div className="field">
-          <label>Empleado</label>
-          <select
-            value={recipientUserId}
-            onChange={(e) => {
-              setPage(1);
-              setRecipientUserId(e.target.value);
-            }}
-          >
-            <option value="">Todos</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label>Tipo de evento</label>
-          <select
-            value={eventTypeId}
-            onChange={(e) => {
-              setPage(1);
-              setEventTypeId(e.target.value);
-            }}
-          >
-            <option value="">Todos</option>
-            {eventTypes.map((et) => (
-              <option key={et.id} value={et.id}>
-                {et.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label>Estado</label>
-          <select
-            value={status}
-            onChange={(e) => {
-              setPage(1);
-              setStatus(e.target.value);
-            }}
-          >
-            <option value="">Todos</option>
-            <option value="PENDING">Pendiente</option>
-            <option value="QUEUED">Encolada</option>
-            <option value="SENT">Enviada</option>
-            <option value="FAILED">Fallida</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>Desde</label>
-          <input
-            type="date"
-            value={from}
-            onChange={(e) => {
-              setPage(1);
-              setFrom(e.target.value);
-            }}
-          />
-        </div>
-        <div className="field">
-          <label>Hasta</label>
-          <input
-            type="date"
-            value={to}
-            onChange={(e) => {
-              setPage(1);
-              setTo(e.target.value);
-            }}
-          />
-        </div>
-        <button className="btn btn-sm" onClick={resetFilters}>
-          Limpiar filtros
-        </button>
-      </div>
+      {error && <div className="alert">{error}</div>}
 
-      {error && <p className="error-text">{error}</p>}
-
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Tipo de evento</th>
-              <th>Destinatario</th>
-              <th>Mensaje</th>
-              <th>Estado</th>
-              <th>Intentos</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((n) => (
-              <tr key={n.id}>
-                <td>{new Date(n.createdAt).toLocaleString()}</td>
-                <td>{n.eventType.name}</td>
-                <td>{n.recipientUser?.name ?? n.recipientEmail}</td>
-                <td className="wrap">
-                  {n.renderedMessage}
-                  {n.status === "FAILED" && n.lastError && (
-                    <div className="error-text" style={{ marginTop: 4 }}>
-                      {n.lastError}
-                    </div>
-                  )}
-                </td>
-                <td>
-                  <StatusBadge status={n.status} />
-                </td>
-                <td>
-                  {n.attempts}/{n.maxAttempts}
-                </td>
-              </tr>
-            ))}
-            {!loading && items.length === 0 && (
-              <tr>
-                <td colSpan={6}>
-                  <div className="empty-state">No hay notificaciones con estos filtros.</div>
-                </td>
-              </tr>
+      <div className="panel">
+        <div className="panel-header">
+          <h3 className="panel-title">
+            Historial
+            <span className="badge badge-plain num">{formatNumber(total)}</span>
+          </h3>
+          <div className="toolbar">
+            <select
+              className={`control${recipientUserId ? " active" : ""}`}
+              aria-label="Empleado"
+              value={recipientUserId}
+              onChange={(e) => {
+                setPage(1);
+                setRecipientUserId(e.target.value);
+              }}
+            >
+              <option value="">Todos los empleados</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className={`control${eventTypeId ? " active" : ""}`}
+              aria-label="Tipo de evento"
+              value={eventTypeId}
+              onChange={(e) => {
+                setPage(1);
+                setEventTypeId(e.target.value);
+              }}
+            >
+              <option value="">Todos los eventos</option>
+              {eventTypes.map((et) => (
+                <option key={et.id} value={et.id}>
+                  {et.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className={`control${status ? " active" : ""}`}
+              aria-label="Estado"
+              value={status}
+              onChange={(e) => {
+                setPage(1);
+                setStatus(e.target.value);
+              }}
+            >
+              <option value="">Cualquier estado</option>
+              <option value="PENDING">Pendiente</option>
+              <option value="QUEUED">Encolada</option>
+              <option value="SENT">Enviada</option>
+              <option value="FAILED">Fallida</option>
+            </select>
+            <span className="date-range">
+              <input
+                type="date"
+                className={`control${from ? " active" : ""}`}
+                aria-label="Desde"
+                value={from}
+                onChange={(e) => {
+                  setPage(1);
+                  setFrom(e.target.value);
+                }}
+              />
+              –
+              <input
+                type="date"
+                className={`control${to ? " active" : ""}`}
+                aria-label="Hasta"
+                value={to}
+                onChange={(e) => {
+                  setPage(1);
+                  setTo(e.target.value);
+                }}
+              />
+            </span>
+            {hasFilters && (
+              <button className="btn btn-sm btn-ghost" onClick={resetFilters}>
+                <IconX width={13} height={13} /> Limpiar
+              </button>
             )}
-          </tbody>
-        </table>
-      </div>
+          </div>
+        </div>
 
-      <div className="pagination">
-        <button className="btn btn-sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-          Anterior
-        </button>
-        <span>
-          Pagina {page} de {totalPages} ({total} notificaciones)
-        </span>
-        <button className="btn btn-sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-          Siguiente
-        </button>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Evento</th>
+                <th>Destinatario</th>
+                <th>Mensaje</th>
+                <th>Estado</th>
+                <th style={{ textAlign: "right" }}>Intentos</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((n) => {
+                const who = n.recipientUser?.name ?? n.recipientEmail;
+                return (
+                  <tr key={n.id}>
+                    <td className="cell-mono">{formatDateTime(n.createdAt)}</td>
+                    <td>{n.eventType.name}</td>
+                    <td>
+                      <div className="person">
+                        <span className="avatar">{initials(who)}</span>
+                        <span>{who}</span>
+                      </div>
+                    </td>
+                    <td className="wrap">
+                      {n.renderedMessage}
+                      {n.status === "FAILED" && n.lastError && (
+                        <div className="error-text" style={{ marginTop: 4, fontSize: 12 }}>
+                          {n.lastError}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <StatusBadge status={n.status} />
+                    </td>
+                    <td className="cell-mono" style={{ textAlign: "right" }}>
+                      {n.attempts}/{n.maxAttempts}
+                    </td>
+                  </tr>
+                );
+              })}
+              {!loading && items.length === 0 && (
+                <tr>
+                  <td colSpan={6}>
+                    <div className="empty-state">
+                      <strong>Sin resultados</strong>
+                      No hay notificaciones con estos filtros.
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="panel-footer">
+          <span>
+            <span className="num">
+              {firstRow}–{lastRow}
+            </span>{" "}
+            de <span className="num">{formatNumber(total)}</span>
+          </span>
+          <div className="pagination">
+            <span>
+              Página <span className="num">{page}</span> de <span className="num">{totalPages}</span>
+            </span>
+            <button
+              className="btn btn-sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+              aria-label="Página anterior"
+            >
+              <IconChevronLeft width={14} height={14} />
+            </button>
+            <button
+              className="btn btn-sm"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+              aria-label="Página siguiente"
+            >
+              <IconChevronRight width={14} height={14} />
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

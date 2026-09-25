@@ -21,7 +21,7 @@ export function LoginPage() {
       await login({ tenantSlug, email, password });
       navigate("/", { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "No se pudo iniciar sesion");
+      setError(err instanceof ApiError ? err.message : "No se pudo iniciar sesión");
     } finally {
       setLoading(false);
     }
@@ -32,11 +32,11 @@ export function LoginPage() {
       <AuthBrandPanel />
       <div className="auth-form-panel">
         <div className="auth-card">
-          <h1>Bienvenido de nuevo</h1>
-          <p className="subtitle">Ingresa a tu empresa para ver tus notificaciones</p>
+          <h1>Ingresá a tu planta</h1>
+          <p className="subtitle">Usá el identificador de tu empresa y tu email.</p>
           <form className="form-grid" onSubmit={handleSubmit}>
             <div className="field">
-              <label htmlFor="tenantSlug">Empresa (slug)</label>
+              <label htmlFor="tenantSlug">Empresa</label>
               <input
                 id="tenantSlug"
                 value={tenantSlug}
@@ -58,7 +58,7 @@ export function LoginPage() {
               />
             </div>
             <div className="field">
-              <label htmlFor="password">Contrasena</label>
+              <label htmlFor="password">Contraseña</label>
               <input
                 id="password"
                 type="password"
@@ -74,7 +74,7 @@ export function LoginPage() {
             </button>
           </form>
           <p className="auth-switch">
-            ¿Tu empresa no esta registrada? <Link to="/register">Registrarla</Link>
+            ¿Tu empresa todavía no usa Control Operativo? <Link to="/register">Registrala</Link>
           </p>
         </div>
       </div>

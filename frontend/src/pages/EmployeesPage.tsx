@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import * as api from "../api/client";
 import { ApiError } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { IconPlus } from "../components/icons";
+import { initials, roleLabel } from "../format";
 import type { Channel, Role, User } from "../types";
 
 interface FormState {
@@ -116,25 +118,24 @@ export function EmployeesPage() {
       <div className="page-header">
         <div>
           <h1>Empleados</h1>
-          <p>Alta, baja y asignacion de area/turno</p>
+          <p>Quiénes reciben avisos, en qué área y turno.</p>
         </div>
         {isAdmin && (
           <button className="btn btn-primary" onClick={openCreate}>
-            + Nuevo empleado
+            <IconPlus width={14} height={14} /> Nuevo empleado
           </button>
         )}
       </div>
 
-      {error && <p className="error-text">{error}</p>}
+      {error && <div className="alert">{error}</div>}
 
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
               <th>Nombre</th>
-              <th>Email</th>
               <th>Rol</th>
-              <th>Area</th>
+              <th>Área</th>
               <th>Turno</th>
               <th>Estado</th>
               {isAdmin && <th></th>}
@@ -143,20 +144,27 @@ export function EmployeesPage() {
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
-                <td>{u.name}</td>
-                <td>{u.email}</td>
                 <td>
-                  <span className="badge badge-role">{u.role}</span>
+                  <div className="person">
+                    <span className="avatar">{initials(u.name)}</span>
+                    <span className="who">
+                      {u.name}
+                      <small>{u.email}</small>
+                    </span>
+                  </div>
                 </td>
-                <td>{u.area ?? "-"}</td>
-                <td>{u.shift ?? "-"}</td>
+                <td>
+                  <span className="badge badge-role">{roleLabel(u.role)}</span>
+                </td>
+                <td className="cell-muted">{u.area ?? "—"}</td>
+                <td className="cell-muted">{u.shift ?? "—"}</td>
                 <td>
                   <span className={`badge ${u.isActive ? "badge-active" : "badge-inactive"}`}>
                     {u.isActive ? "Activo" : "Inactivo"}
                   </span>
                 </td>
                 {isAdmin && (
-                  <td>
+                  <td className="cell-actions">
                     <div className="section-actions">
                       <button className="btn btn-sm" onClick={() => openEdit(u)}>
                         Editar
@@ -173,8 +181,8 @@ export function EmployeesPage() {
             ))}
             {!loading && users.length === 0 && (
               <tr>
-                <td colSpan={7}>
-                  <div className="empty-state">No hay empleados todavia.</div>
+                <td colSpan={6}>
+                  <div className="empty-state">No hay empleados todavía.</div>
                 </td>
               </tr>
             )}
@@ -210,16 +218,25 @@ export function EmployeesPage() {
                 </select>
               </div>
               <div className="field">
-                <label>Area</label>
-                <input value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} placeholder="Moldeo" />
+                <label>Área</label>
+                <input
+                  value={form.area}
+                  onChange={(e) => setForm({ ...form, area: e.target.value })}
+                  placeholder="Moldeo"
+                />
               </div>
               <div className="field">
                 <label>Turno</label>
-                <input value={form.shift} onChange={(e) => setForm({ ...form, shift: e.target.value })} placeholder="Manana" />
+                <input
+                  value={form.shift}
+                  onChange={(e) => setForm({ ...form, shift: e.target.value })}
+                  placeholder="Mañana"
+                />
               </div>
               <div className="field">
-                <label>Telefono (para WhatsApp, fase 2)</label>
+                <label>Teléfono</label>
                 <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+                <span className="hint">Para WhatsApp, en la fase 2.</span>
               </div>
               <div className="field">
                 <label>Canal de contacto</label>
@@ -228,18 +245,19 @@ export function EmployeesPage() {
                   onChange={(e) => setForm({ ...form, contactChannel: e.target.value as Channel })}
                 >
                   <option value="EMAIL">Email</option>
-                  <option value="WHATSAPP">WhatsApp (no disponible aun)</option>
+                  <option value="WHATSAPP">WhatsApp (todavía no disponible)</option>
                 </select>
               </div>
               {!form.id && (
                 <div className="field">
-                  <label>Contrasena (dejar vacio si no debe loguear al panel)</label>
+                  <label>Contraseña</label>
                   <input
                     type="password"
                     minLength={8}
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
                   />
+                  <span className="hint">Dejala vacía si esta persona no necesita entrar al panel.</span>
                 </div>
               )}
               {formError && <p className="error-text">{formError}</p>}

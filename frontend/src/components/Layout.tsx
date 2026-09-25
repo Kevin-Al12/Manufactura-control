@@ -1,82 +1,121 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
+import type { ReactNode } from "react";
 import { useAuth } from "../context/AuthContext";
-import { IconGrid, IconUsers, IconBolt, IconSettings, IconInbox, IconLogout, IconFactory, IconBox } from "./icons";
+import { initials, roleLabel } from "../format";
+import {
+  IconGrid,
+  IconUsers,
+  IconBolt,
+  IconSettings,
+  IconInbox,
+  IconLogout,
+  IconFactory,
+  IconBox,
+  IconLogo,
+} from "./icons";
 
-function initials(name: string): string {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
-    .join("");
+const PAGE_TITLES: Record<string, string> = {
+  "/employees": "Empleados",
+  "/event-types": "Tipos de evento",
+  "/plant": "Planta",
+  "/inventory": "Inventario",
+  "/settings": "Configuración",
+};
+
+const TODAY = new Intl.DateTimeFormat("es-AR", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
+
+function NavItem({ to, icon, children }: { to: string; icon: ReactNode; children: ReactNode }) {
+  return (
+    <NavLink to={to} end={to === "/"} className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+      {icon}
+      {children}
+    </NavLink>
+  );
 }
 
 export function Layout() {
   const { user, tenant, logout } = useAuth();
+  const { pathname } = useLocation();
   const isStaffManager = user?.role === "ADMIN" || user?.role === "SUPERVISOR";
+  const homeTitle = isStaffManager ? "Dashboard" : "Mis notificaciones";
+  const currentTitle = PAGE_TITLES[pathname] ?? homeTitle;
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <div className="mark">CO</div>
+          <div className="brand-mark">
+            <IconLogo width={15} height={15} />
+          </div>
           <div className="name">
             Control Operativo
             <small>{tenant?.name}</small>
           </div>
         </div>
 
-        {isStaffManager && (
-          <NavLink to="/" end className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-            <IconGrid /> Dashboard
-          </NavLink>
-        )}
-        {isStaffManager && (
-          <NavLink to="/employees" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-            <IconUsers /> Empleados
-          </NavLink>
-        )}
-        {isStaffManager && (
-          <NavLink to="/event-types" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-            <IconBolt /> Tipos de evento
-          </NavLink>
-        )}
-        {isStaffManager && (
-          <NavLink to="/plant" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-            <IconFactory /> Planta
-          </NavLink>
-        )}
-        {isStaffManager && (
-          <NavLink to="/inventory" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-            <IconBox /> Inventario
-          </NavLink>
-        )}
-        {!isStaffManager && (
-          <NavLink to="/" end className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-            <IconInbox /> Mis notificaciones
-          </NavLink>
-        )}
-        {user?.role === "ADMIN" && (
-          <NavLink to="/settings" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-            <IconSettings /> Configuracion
-          </NavLink>
+        {isStaffManager ? (
+          <>
+            <nav className="nav-group">
+              <div className="nav-group-label">Operación</div>
+              <NavItem to="/" icon={<IconGrid />}>
+                Dashboard
+              </NavItem>
+              <NavItem to="/plant" icon={<IconFactory />}>
+                Planta
+              </NavItem>
+              <NavItem to="/inventory" icon={<IconBox />}>
+                Inventario
+              </NavItem>
+            </nav>
+            <nav className="nav-group">
+              <div className="nav-group-label">Gestión</div>
+              <NavItem to="/event-types" icon={<IconBolt />}>
+                Tipos de evento
+              </NavItem>
+              <NavItem to="/employees" icon={<IconUsers />}>
+                Empleados
+              </NavItem>
+              {user?.role === "ADMIN" && (
+                <NavItem to="/settings" icon={<IconSettings />}>
+                  Configuración
+                </NavItem>
+              )}
+            </nav>
+          </>
+        ) : (
+          <nav className="nav-group">
+            <NavItem to="/" icon={<IconInbox />}>
+              Mis notificaciones
+            </NavItem>
+          </nav>
         )}
 
         <div className="sidebar-footer">
           <div className="sidebar-user">
             <div className="avatar">{user ? initials(user.name) : ""}</div>
-            <div>
+            <div style={{ minWidth: 0 }}>
               <div className="name">{user?.name}</div>
-              <div className="role">{user?.role}</div>
+              <div className="role">{user ? roleLabel(user.role) : ""}</div>
             </div>
           </div>
-          <button className="btn btn-sm" onClick={logout} style={{ width: "100%" }}>
-            <IconLogout width={14} height={14} /> Cerrar sesion
+          <button className="icon-btn" onClick={logout} title="Cerrar sesión" aria-label="Cerrar sesión">
+            <IconLogout width={16} height={16} />
           </button>
         </div>
       </aside>
+
       <main className="main">
-        <Outlet />
+        <header className="topbar">
+          <div className="crumbs">
+            <span>{tenant?.name}</span>
+            <span className="sep">/</span>
+            <span className="current">{currentTitle}</span>
+          </div>
+          <span className="live-pill">{TODAY}</span>
+        </header>
+        <div className="page">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

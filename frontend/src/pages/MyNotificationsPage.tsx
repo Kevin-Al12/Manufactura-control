@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import * as api from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
+import { IconChevronLeft, IconChevronRight } from "../components/icons";
+import { formatDateTime } from "../format";
 import type { NotificationItem } from "../types";
 
 export function MyNotificationsPage() {
@@ -27,52 +29,72 @@ export function MyNotificationsPage() {
       <div className="page-header">
         <div>
           <h1>Mis notificaciones</h1>
-          <p>Historial de avisos que te llegaron</p>
+          <p>Los avisos que te llegaron, del más reciente al más antiguo.</p>
         </div>
       </div>
 
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Tipo de evento</th>
-              <th>Mensaje</th>
-              <th>Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((n) => (
-              <tr key={n.id}>
-                <td>{new Date(n.createdAt).toLocaleString()}</td>
-                <td>{n.eventType.name}</td>
-                <td className="wrap">{n.renderedMessage}</td>
-                <td>
-                  <StatusBadge status={n.status} />
-                </td>
-              </tr>
-            ))}
-            {!loading && items.length === 0 && (
+      <div className="panel">
+        <div className="table-wrap">
+          <table>
+            <thead>
               <tr>
-                <td colSpan={4}>
-                  <div className="empty-state">Todavia no tenes notificaciones.</div>
-                </td>
+                <th>Fecha</th>
+                <th>Tipo de evento</th>
+                <th>Mensaje</th>
+                <th>Estado</th>
               </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {items.map((n) => (
+                <tr key={n.id}>
+                  <td className="cell-mono">{formatDateTime(n.createdAt)}</td>
+                  <td>{n.eventType.name}</td>
+                  <td className="wrap">{n.renderedMessage}</td>
+                  <td>
+                    <StatusBadge status={n.status} />
+                  </td>
+                </tr>
+              ))}
+              {!loading && items.length === 0 && (
+                <tr>
+                  <td colSpan={4}>
+                    <div className="empty-state">
+                      <strong>Nada por acá</strong>
+                      Todavía no tenés notificaciones.
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
 
-      <div className="pagination">
-        <button className="btn btn-sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-          Anterior
-        </button>
-        <span>
-          Pagina {page} de {totalPages}
-        </span>
-        <button className="btn btn-sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-          Siguiente
-        </button>
+        <div className="panel-footer">
+          <span>
+            <span className="num">{total}</span> notificaciones
+          </span>
+          <div className="pagination">
+            <span>
+              Página <span className="num">{page}</span> de <span className="num">{totalPages}</span>
+            </span>
+            <button
+              className="btn btn-sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+              aria-label="Página anterior"
+            >
+              <IconChevronLeft width={14} height={14} />
+            </button>
+            <button
+              className="btn btn-sm"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+              aria-label="Página siguiente"
+            >
+              <IconChevronRight width={14} height={14} />
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

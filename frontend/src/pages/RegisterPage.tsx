@@ -33,8 +33,8 @@ export function RegisterPage() {
       <AuthBrandPanel />
       <div className="auth-form-panel">
         <div className="auth-card">
-          <h1>Registra tu empresa</h1>
-          <p className="subtitle">Crea la cuenta de administrador en un minuto</p>
+          <h1>Registrá tu empresa</h1>
+          <p className="subtitle">Creá la cuenta de administrador. Lleva un minuto.</p>
           <form className="form-grid" onSubmit={handleSubmit}>
             <div className="field">
               <label htmlFor="companyName">Nombre de la empresa</label>
@@ -55,7 +55,7 @@ export function RegisterPage() {
               />
             </div>
             <div className="field">
-              <label htmlFor="adminPassword">Contrasena (minimo 8 caracteres)</label>
+              <label htmlFor="adminPassword">Contraseña</label>
               <input
                 id="adminPassword"
                 type="password"
@@ -64,6 +64,7 @@ export function RegisterPage() {
                 onChange={(e) => setAdminPassword(e.target.value)}
                 required
               />
+              <span className="hint">Mínimo 8 caracteres.</span>
             </div>
             {error && <p className="error-text">{error}</p>}
             <button className="btn btn-primary" type="submit" disabled={loading}>
@@ -71,7 +72,7 @@ export function RegisterPage() {
             </button>
           </form>
           <p className="auth-switch">
-            ¿Ya tenes cuenta? <Link to="/login">Ingresar</Link>
+            ¿Ya tenés cuenta? <Link to="/login">Ingresar</Link>
           </p>
         </div>
       </div>

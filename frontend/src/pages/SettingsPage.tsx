@@ -1,6 +1,7 @@
 import { useState } from "react";
 import * as api from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { IconCopy, IconRefresh } from "../components/icons";
 
 export function SettingsPage() {
   const { tenant, refreshTenant } = useAuth();
@@ -8,7 +9,7 @@ export function SettingsPage() {
   const [copied, setCopied] = useState(false);
 
   async function handleRotate() {
-    if (!confirm("La API key anterior dejara de funcionar de inmediato. ¿Continuar?")) return;
+    if (!confirm("La API key anterior dejará de funcionar de inmediato. ¿Continuar?")) return;
     setRotating(true);
     try {
       await api.rotateApiKey();
@@ -29,39 +30,51 @@ export function SettingsPage() {
     <div>
       <div className="page-header">
         <div>
-          <h1>Configuracion</h1>
-          <p>Datos de la empresa y credenciales para integraciones</p>
+          <h1>Configuración</h1>
+          <p>Datos de la empresa y credenciales para integraciones.</p>
         </div>
       </div>
 
-      <div className="card" style={{ maxWidth: 560, marginBottom: 16 }}>
-        <h2 style={{ fontSize: 15, marginTop: 0 }}>Empresa</h2>
-        <p className="muted" style={{ marginTop: 4 }}>
-          {tenant?.name} — slug: <code className="key">{tenant?.slug}</code>
-        </p>
-      </div>
-
-      <div className="card" style={{ maxWidth: 560 }}>
-        <h2 style={{ fontSize: 15, marginTop: 0 }}>API key para webhooks</h2>
-        <p className="muted">
-          Usala en el header <code>X-API-Key</code> al llamar a{" "}
-          <code>POST /api/events/trigger</code> desde un sistema externo (MES, PLC, ERP), sin
-          necesidad de un usuario logueado.
-        </p>
-        <div className="form-grid">
-          <div className="field">
-            <label>API key actual</label>
-            <code className="key">{tenant?.apiKey}</code>
+      <div className="settings-grid">
+        <section className="setting-card">
+          <div className="body">
+            <h2>Empresa</h2>
+            <p>Así te identifica el sistema. Tus empleados usan el identificador para iniciar sesión.</p>
+            <dl className="kv">
+              <dt>Nombre</dt>
+              <dd>{tenant?.name}</dd>
+              <dt>Identificador</dt>
+              <dd>
+                <code className="key">{tenant?.slug}</code>
+              </dd>
+            </dl>
           </div>
-          <div className="section-actions">
-            <button className="btn btn-sm" onClick={handleCopy}>
-              {copied ? "Copiada" : "Copiar"}
-            </button>
+        </section>
+
+        <section className="setting-card">
+          <div className="body">
+            <h2>API key para webhooks</h2>
+            <p>
+              Mandala en el header <code className="key">X-API-Key</code> al llamar a{" "}
+              <code className="key">POST /api/events/trigger</code> desde un sistema externo (MES, PLC, ERP). No hace
+              falta un usuario logueado.
+            </p>
+            <div className="key-field">
+              <code>{tenant?.apiKey}</code>
+              <button className="btn btn-sm" onClick={handleCopy}>
+                <IconCopy width={13} height={13} />
+                {copied ? "Copiada" : "Copiar"}
+              </button>
+            </div>
+          </div>
+          <div className="foot">
+            <span>Rotarla invalida la anterior al instante.</span>
             <button className="btn btn-sm btn-danger" onClick={handleRotate} disabled={rotating}>
+              <IconRefresh width={13} height={13} />
               {rotating ? "Rotando..." : "Rotar API key"}
             </button>
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );

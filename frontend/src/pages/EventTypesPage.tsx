@@ -3,6 +3,8 @@ import * as api from "../api/client";
 import { ApiError } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { SIMULATOR_DEMO_PAYLOAD, SIMULATOR_TRIGGER_KEYS } from "../constants";
+import { IconPlus } from "../components/icons";
+import { roleLabel } from "../format";
 import type { Channel, EventType, RecipientRule, Role } from "../types";
 
 type RuleType = RecipientRule["type"];
@@ -35,11 +37,11 @@ const EMPTY_FORM: FormState = {
 function describeRule(rule: RecipientRule): string {
   switch (rule.type) {
     case "ROLE":
-      return `Rol: ${rule.value}`;
+      return `Rol · ${roleLabel(rule.value)}`;
     case "AREA":
-      return `Area: ${rule.value}`;
+      return `Área · ${rule.value}`;
     case "USERS":
-      return `${rule.value.length} usuario(s) especifico(s)`;
+      return `${rule.value.length} usuario(s) específico(s)`;
     case "ALL":
       return "Todos los empleados";
   }
@@ -156,16 +158,16 @@ export function EventTypesPage() {
       <div className="page-header">
         <div>
           <h1>Tipos de evento</h1>
-          <p>Catalogo de eventos a monitorear, con sus destinatarios y plantilla</p>
+          <p>Qué dispara un aviso, a quién le llega y con qué mensaje.</p>
         </div>
         {isAdmin && (
           <button className="btn btn-primary" onClick={openCreate}>
-            + Nuevo tipo de evento
+            <IconPlus width={14} height={14} /> Nuevo tipo de evento
           </button>
         )}
       </div>
 
-      {error && <p className="error-text">{error}</p>}
+      {error && <div className="alert">{error}</div>}
 
       <div className="table-wrap">
         <table>
@@ -183,25 +185,27 @@ export function EventTypesPage() {
           <tbody>
             {eventTypes.map((et) => (
               <tr key={et.id}>
-                <td>{et.name}</td>
+                <td>
+                  <div style={{ fontWeight: 500 }}>{et.name}</div>
+                </td>
                 <td>
                   <code className="key">{et.triggerKey}</code>
                   {SIMULATOR_TRIGGER_KEYS.some((sk) => sk.key === et.triggerKey) && (
-                    <span className="badge badge-role" style={{ marginLeft: 6 }}>
+                    <span className="badge badge-accent" style={{ marginLeft: 6 }}>
                       Planta
                     </span>
                   )}
                 </td>
-                <td>{describeRule(et.recipientRule)}</td>
-                <td>{et.channel}</td>
-                <td>{et.schedule ?? "-"}</td>
+                <td className="cell-muted">{describeRule(et.recipientRule)}</td>
+                <td className="cell-muted">{et.channel === "EMAIL" ? "Email" : "WhatsApp"}</td>
+                <td className="cell-mono">{et.schedule ?? "—"}</td>
                 <td>
                   <span className={`badge ${et.isActive ? "badge-active" : "badge-inactive"}`}>
                     {et.isActive ? "Activo" : "Inactivo"}
                   </span>
                 </td>
                 {isAdmin && (
-                  <td>
+                  <td className="cell-actions">
                     <div className="section-actions">
                       <button className="btn btn-sm" onClick={() => handleTestTrigger(et)}>
                         Probar disparo
@@ -215,7 +219,11 @@ export function EventTypesPage() {
                         </button>
                       )}
                     </div>
-                    {triggerFeedback[et.id] && <div className="muted" style={{ marginTop: 6 }}>{triggerFeedback[et.id]}</div>}
+                    {triggerFeedback[et.id] && (
+                      <div className="muted" style={{ marginTop: 6, fontSize: 12, textAlign: "right" }}>
+                        {triggerFeedback[et.id]}
+                      </div>
+                    )}
                   </td>
                 )}
               </tr>
@@ -223,7 +231,7 @@ export function EventTypesPage() {
             {!loading && eventTypes.length === 0 && (
               <tr>
                 <td colSpan={7}>
-                  <div className="empty-state">No hay tipos de evento todavia.</div>
+                  <div className="empty-state">No hay tipos de evento todavía.</div>
                 </td>
               </tr>
             )}
@@ -241,7 +249,7 @@ export function EventTypesPage() {
                 <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
               </div>
               <div className="field">
-                <label>trigger_key (snake_case, usado por API/webhook)</label>
+                <label>Clave de disparo</label>
                 <input
                   value={form.triggerKey}
                   disabled={!!form.id}
@@ -249,23 +257,30 @@ export function EventTypesPage() {
                   placeholder="lote_listo"
                   required
                 />
+                <span className="hint">En snake_case. Es la que usan la API y los webhooks.</span>
               </div>
               <div className="field">
-                <label>Descripcion</label>
+                <label>Descripción</label>
                 <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
               </div>
               <div className="field">
                 <label>Destinatarios</label>
-                <select value={form.ruleType} onChange={(e) => setForm({ ...form, ruleType: e.target.value as RuleType })}>
+                <select
+                  value={form.ruleType}
+                  onChange={(e) => setForm({ ...form, ruleType: e.target.value as RuleType })}
+                >
                   <option value="ROLE">Por rol</option>
-                  <option value="AREA">Por area</option>
+                  <option value="AREA">Por área</option>
                   <option value="ALL">Todos los empleados</option>
                 </select>
               </div>
               {form.ruleType === "ROLE" && (
                 <div className="field">
                   <label>Rol destinatario</label>
-                  <select value={form.ruleRole} onChange={(e) => setForm({ ...form, ruleRole: e.target.value as Role })}>
+                  <select
+                    value={form.ruleRole}
+                    onChange={(e) => setForm({ ...form, ruleRole: e.target.value as Role })}
+                  >
                     <option value="ADMIN">Admin</option>
                     <option value="SUPERVISOR">Supervisor</option>
                     <option value="EMPLEADO">Empleado</option>
@@ -274,33 +289,41 @@ export function EventTypesPage() {
               )}
               {form.ruleType === "AREA" && (
                 <div className="field">
-                  <label>Area destinataria</label>
-                  <input value={form.ruleArea} onChange={(e) => setForm({ ...form, ruleArea: e.target.value })} placeholder="Moldeo" />
+                  <label>Área destinataria</label>
+                  <input
+                    value={form.ruleArea}
+                    onChange={(e) => setForm({ ...form, ruleArea: e.target.value })}
+                    placeholder="Moldeo"
+                  />
                 </div>
               )}
               <div className="field">
-                <label>Plantilla del mensaje ({"{{variable}}"})</label>
+                <label>Plantilla del mensaje</label>
                 <textarea
                   value={form.messageTemplate}
                   onChange={(e) => setForm({ ...form, messageTemplate: e.target.value })}
-                  placeholder="El lote {{lote_id}} esta listo en {{area}}."
+                  placeholder="El lote {{lote_id}} está listo en {{area}}."
                   required
                 />
+                <span className="hint">Usá {"{{variable}}"} para insertar datos del evento.</span>
               </div>
               <div className="field">
                 <label>Canal</label>
                 <select value={form.channel} onChange={(e) => setForm({ ...form, channel: e.target.value as Channel })}>
                   <option value="EMAIL">Email</option>
-                  <option value="WHATSAPP">WhatsApp (no disponible aun)</option>
+                  <option value="WHATSAPP">WhatsApp (todavía no disponible)</option>
                 </select>
               </div>
               <div className="field">
-                <label>Disparo programado (cron, opcional)</label>
+                <label>Disparo programado</label>
                 <input
                   value={form.schedule}
                   onChange={(e) => setForm({ ...form, schedule: e.target.value })}
-                  placeholder="0 8 * * * (todos los dias a las 8:00)"
+                  placeholder="0 8 * * *"
                 />
+                <span className="hint">
+                  Opcional, en formato cron. Ej.: 0 8 * * * dispara todos los días a las 8:00.
+                </span>
               </div>
               {formError && <p className="error-text">{formError}</p>}
             </div>
